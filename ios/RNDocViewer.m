@@ -12,14 +12,16 @@
 #import <AVKit/AVKit.h>
 #import "QLCustomPreviewItem.h"
 
+
+
 @implementation RNDocViewer
 CGFloat prog;
 @synthesize bridge = _bridge;
 
+
 RCT_EXPORT_MODULE()
 
-- (NSArray<NSString *> *)supportedEvents
-{
+- (NSArray<NSString *> *)supportedEvents {
     return @[@"RNDownloaderProgress", @"DoneButtonEvent", @"CancelEvent", @"OKEvent"];
 }
 
@@ -35,7 +37,9 @@ RCT_EXPORT_METHOD(testModule:(NSString *)name location:(NSString *)location)
 
 RCT_EXPORT_METHOD(statusProgress:(NSArray *)array callback:(RCTResponseSenderBlock)callback)
 {
+
    callback(@[[NSNull null], @(prog)]);
+    
 }
 
 /**
@@ -49,70 +53,52 @@ RCT_EXPORT_METHOD(openDoc:(NSArray *)array callback:(RCTResponseSenderBlock)call
     __weak RNDocViewer* weakSelf = self;
     //Download Progress
     NSDictionary* dict_download = [array objectAtIndex:0];
-    NSString* urlStrdownload = dict_download[@"url"];
-    [self hitServerForUrl:urlStrdownload];
     dispatch_queue_t asyncQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_async(asyncQueue, ^{
         NSDictionary* dict = [array objectAtIndex:0];
         NSString* urlStr = dict[@"url"];
-        NSString* fileNameOptional = dict[@"fileName"];
-        NSString* fileType = dict[@"fileType"];
+        NSString* fileNameOptional = dict[@"fileNameOptional"];
         NSURL* url = [NSURL URLWithString:[urlStr stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding]];
         NSData* dat = [NSData dataWithContentsOfURL:url];
         RCTLogInfo(@"Url %@", url);
         RCTLogInfo(@"FileNameOptional %@", fileNameOptional);
-        NSArray* parts = [urlStr componentsSeparatedByString:@"/"];
-        NSArray* fileNameParts = [[parts lastObject] componentsSeparatedByString:@"?"];    // to remove any query string on url
-        NSString* fileNameExported = [fileNameParts firstObject];
-        NSString* fileExt = [fileNameExported pathExtension];
+        NSArray *parts = [urlStr componentsSeparatedByString:@"/"];
+        NSString *fileNameExported = [parts lastObject];
         //Custom Filename
-        NSString* fileName = @"";
-
-        if ([fileNameOptional length] > 0 && [fileType length] > 0) {    // both fileNameOptional and fileType are given
-            fileExt = fileType;
-            NSString* extOnFileNameOptional = [fileNameOptional pathExtension];   // ext from fileNameOptional
-            if ([extOnFileNameOptional length] > 0) {   // if ext on fileNameOptional is found, just delete it
-                fileName = [fileNameOptional stringByDeletingPathExtension];
-            } else {
-                fileName = fileNameOptional;
-            }
-        } else if ([fileNameOptional length] > 0) {    // fileType is not given
-            NSString* extOnFileNameOptional = [fileNameOptional pathExtension];   // ext from fileNameOptional
-            if ([fileExt length] > 0) {   // ext from url is found
-                if ([extOnFileNameOptional length] > 0) {   // if ext on fileNameOptional is found, just delete it
-                    fileName = [fileNameOptional stringByDeletingPathExtension];
-                } else {
-                    fileName = fileNameOptional;
-                }
-            } else {    // ext is missing from url
-                if ([extOnFileNameOptional length] > 0) {
-                    fileName = [fileNameOptional stringByDeletingPathExtension];
-                    fileExt = extOnFileNameOptional;
-                }    // else fileExt is empty string
-            }
+        NSString *fileName = @"";
+        if([fileNameOptional length] > 0){
+            NSString* fileExt = [fileNameExported pathExtension];
+            fileName = [NSString stringWithFormat:@"%@%c%@", fileNameOptional , '.', fileExt];
+        }else{
+            //get File Name example a.pdf from Url http://xyz/a.pdf
+            fileName = [NSString stringWithFormat:@"%@", fileNameExported];
         }
-        if ([fileExt length] > 0) {
-            fileName = [NSString stringWithFormat:@"%@%c%@", fileName , '.', fileExt];
-        }
-
+        
         //From the www
-        if ([urlStr containsString:@"http"] || [urlStr containsString:@"https"]) {
-            if (dat == nil) {
-                if (callback) {
-                    callback(@[[NSNull null], @"Doc Url not found"]);
+        if (@available(iOS 8.0, *)) {
+            if ([urlStr containsString:@"http"] || [urlStr containsString:@"https"]) {
+                if (dat == nil) {
+                    if (callback) {
+                        callback(@[[NSNull null], @"Doc Url not found"]);
+                    }
+                    return;
                 }
-                return;
+                
+                NSString* path = [NSTemporaryDirectory() stringByAppendingPathComponent: fileName];
+                NSURL* tmpFileUrl = [[NSURL alloc] initFileURLWithPath:path];
+                [dat writeToURL:tmpFileUrl atomically:YES];
+                weakSelf.fileUrl = tmpFileUrl;
+                
+            } else {
+                
+                NSURL* tmpFileUrl = [[NSURL alloc] initFileURLWithPath:urlStr];
+                weakSelf.fileUrl = tmpFileUrl;
+                weakSelf.optionalFileName = fileNameOptional;
             }
-
-            NSString* path = [NSTemporaryDirectory() stringByAppendingPathComponent: fileName];
-            NSURL* tmpFileUrl = [[NSURL alloc] initFileURLWithPath:path];
-            [dat writeToURL:tmpFileUrl atomically:YES];
-            weakSelf.fileUrl = tmpFileUrl;
         } else {
-            NSURL* tmpFileUrl = [[NSURL alloc] initFileURLWithPath:urlStr];
-            weakSelf.fileUrl = tmpFileUrl;
-            weakSelf.optionalFileName = fileNameOptional;
+            // Fallback on earlier versions
         }
+
 
         dispatch_async(dispatch_get_main_queue(), ^{
             QLPreviewController* cntr = [[QLPreviewController alloc] init];
@@ -146,7 +132,6 @@ RCT_EXPORT_METHOD(openDocBinaryinUrl:(NSArray *)array callback:(RCTResponseSende
     __weak RNDocViewer* weakSelf = self;
     NSDictionary* dict_download = [array objectAtIndex:0];
     NSString* urlStrdownload = dict_download[@"url"];
-    [self hitServerForUrl:urlStrdownload];
     dispatch_queue_t asyncQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_async(asyncQueue, ^{
         NSDictionary* dict = [array objectAtIndex:0];
@@ -254,32 +239,40 @@ RCT_EXPORT_METHOD(playMovie:(NSString *)file callback:(RCTResponseSenderBlock)ca
     
     
     NSURL *fileURL = nil;
-    if ([_uri containsString:@"http"] || [_uri containsString:@"https"]) {
-        fileURL = [NSURL URLWithString:_uri];
-    }else{
-        NSString* mediaFilePath = [[NSBundle mainBundle] pathForResource:_uri ofType:nil];
-        NSAssert(mediaFilePath, @"Media not found: %@", _uri);
-        fileURL = [NSURL fileURLWithPath:mediaFilePath];
+    if (@available(iOS 8.0, *)) {
+        if ([_uri containsString:@"http"] || [_uri containsString:@"https"]) {
+            fileURL = [NSURL URLWithString:_uri];
+        }else{
+            NSString* mediaFilePath = [[NSBundle mainBundle] pathForResource:_uri ofType:nil];
+            NSAssert(mediaFilePath, @"Media not found: %@", _uri);
+            fileURL = [NSURL fileURLWithPath:mediaFilePath];
+        }
+    } else {
+        // Fallback on earlier versions
     }
     dispatch_async(dispatch_get_main_queue(), ^{
         
-        AVPlayerViewController *movieViewController = [[AVPlayerViewController alloc] init];
-        
-        movieViewController.player = [AVPlayer playerWithURL:fileURL];
-        
-        [movieViewController.player play];
-        
-        movieViewController = movieViewController;
-        
-        UIViewController *ctrl = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
-        UIView *view = [ctrl view];
-        
-        view.window.windowLevel = UIWindowLevelStatusBar;
-        if (callback) {
-            callback(@[[NSNull null], @"true"]);
+        if (@available(iOS 8.0, *)) {
+            AVPlayerViewController *movieViewController = [[AVPlayerViewController alloc] init];
+            
+            movieViewController.player = [AVPlayer playerWithURL:fileURL];
+            
+            [movieViewController.player play];
+            
+            movieViewController = movieViewController;
+            
+            UIViewController *ctrl = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
+            UIView *view = [ctrl view];
+            
+            view.window.windowLevel = UIWindowLevelStatusBar;
+            if (callback) {
+                callback(@[[NSNull null], @"true"]);
+            }
+            
+            [ctrl presentViewController:movieViewController animated:TRUE completion: nil];
+        } else {
+            // Fallback on earlier versions
         }
-        
-        [ctrl presentViewController:movieViewController animated:TRUE completion: nil];
         
     });
 }
@@ -311,18 +304,7 @@ RCT_EXPORT_METHOD(playMovie:(NSString *)file callback:(RCTResponseSenderBlock)ca
 
 
 //Download Task example
-- (void)hitServerForUrl:(NSString*)urlString {
-    NSURL *requestUrl = [NSURL URLWithString:urlString];
-    
-    NSURLSessionConfiguration *defaultConfigurationObject = [NSURLSessionConfiguration defaultSessionConfiguration];
-    
-    NSURLSession *defaultSession = [NSURLSession sessionWithConfiguration:defaultConfigurationObject delegate:self delegateQueue: nil];
-    
-    NSURLSessionDownloadTask *fileDownloadTask = [defaultSession downloadTaskWithURL:requestUrl];
-    
-    [fileDownloadTask resume];
-    
-}
+
 
 
 - (void)DoneButtonClicked {
